@@ -341,6 +341,29 @@ setReplaceMethod("stateTable", "PocockSimonRandomizer", function(x, value) {
     x
 })
 
+setReplaceMethod("stateTable", "cPocockSimonRandomizer", function(x, value) {
+    expt <- x@expt
+    treatment.names <- expt@treatment.names
+    ##print("In statetable")
+    ##print(treatment.names)
+    if (!all(rownames(value) == treatment.names)) {
+        stop("Matrix has the wrong row names")
+    }
+    ##print("check passed")
+    
+    expected.colnames <- unlist(sapply(1:expt@number.of.factors,
+                                       function(i) 
+                                       sapply(1:expt@number.of.factor.levels[i],
+                                              function(j) paste(expt@factor.names[i],
+                                                                expt@factor.level.names[[i]][j], sep=":"))))
+    
+    if (!all(colnames(value) == expected.colnames)) {
+        stop("Matrix has the wrong column names")
+    }
+    
+    x@stateTable <- value
+    x
+})
 ##
 ## This sets the list of treatment assignments so far
 ##
@@ -354,6 +377,38 @@ if (!isGeneric("tr.assignments<-")) {
 }
 
 setReplaceMethod("tr.assignments", "PocockSimonRandomizer", function(x, value) {
+  ##
+  ## Check for appropriate values
+  ##
+  if (!is.data.frame(value)) {
+    stop("Expecting data frame for treatment assignments!")
+  }
+  expt <- x@expt
+  if (ncol(value) != (expt@number.of.factors + 1)) {
+    stop("Wrong dimension for treatment assignment data frame!")
+  }
+  if (any(names(value) != c(expt@factor.names, "Treatment"))) {
+    stop("Wrong variable names for treatment assignments!")
+  }
+
+  if (nrow(value) > 0) {
+    ##
+    ## Now check for the values of the factor levels
+    ##
+    for (i in 1:expt@number.of.factors) {
+      if (! all(value[, i] %in% expt@factor.level.names[[i]])) {
+        stop(paste("Wrong value for variable", names(value)[i], "in treatment assignments!"))
+      }
+    }
+    if (! all(value[, ncol(value)] %in% expt@treatment.names)) {
+      stop(paste("Bad treatement names in treatment assignments!"))
+    }
+  }             
+  x@tr.assignments <- value
+  x
+})
+
+setReplaceMethod("tr.assignments", "cPocockSimonRandomizer", function(x, value) {
   ##
   ## Check for appropriate values
   ##
@@ -448,7 +503,9 @@ setMethod("computeImbalances",
               ##print(result)
               result
           })
-
+setMethod("computeImbalances",
+          signature(object="cPocockSimonRandomizer", factor.values="character"),
+          getMethod("computeImbalances", signature(object="PocockSimonRandomizer", factor.values="character")))
 
 
 if (!isGeneric("computeOverallImbalance")) {
@@ -470,6 +527,9 @@ setMethod("computeOverallImbalance",
               g.func <- object@g.func
               apply(imbalances, 2, g.func)
           })
+setMethod("computeOverallImbalance",
+          signature(object="cPocockSimonRandomizer", imbalances="matrix"),
+          getMethod("computeOverallImbalance", signature(object="PocockSimonRandomizer", imbalances="matrix")))
 
 
 if (!isGeneric("randomize")) {

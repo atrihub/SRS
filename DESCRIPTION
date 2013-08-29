@@ -1,5 +1,5 @@
 Package: SRS
-Version: 0.02
+Version: 0.03
 Author: Balasubramanian Narasimhan <naras@stat.Stanford.EDU>
 Maintainer: Balasubramanian Narasimhan <naras@stat.Stanford.EDU>
 Depends: R (>= 2.5), methods, stats, utils

@@ -1,0 +1,152 @@
+% <<knitropts, results = 'hide', echo = FALSE, message = FALSE>>=
+% library(knitr)
+% opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, tidy = FALSE, comment = NA)
+% @
+
+\documentclass{article}
+\usepackage{mathpazo,amsmath,amsfonts,bm}
+\renewcommand{\sfdefault}{lmss}
+\renewcommand{\ttdefault}{lmtt}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\usepackage{url}
+\usepackage[authoryear]{natbib}
+
+\makeatletter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+% \VignetteIndexEntry{Constrained Randomization}
+% \VignetteEngine{knitr::knitr}
+
+\makeatother
+
+\begin{document}
+
+\title{Specimen Randomization in Longitudinal Biomarker Studies: Constrained Pocock Simon Randomization}
+\author{Michael C. Donohue}
+
+\date{\today}
+
+\maketitle
+%\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+In longitudinal or crossover biomarker studies in which the biological assays must be run in batches, i.e. arrays or plates, it is often desirable to allocate all of the longitudinal samples from a given individual to the same batch. Biological assays can be expensive, so there is often a desire to utilize as much of each batch as possible. Different numbers of longitudinal samples per individual are also common, further complicating the allocation constraints. We propose a constrained Pocock Simon (1975) randomization routine for these scenarios.
+
+Recall the standard Pocock Simon randomization routine works by assessing the potential imbalance for each of $M$ prognostic factors if the next subject were randomized to each of $N$ groups. We call this \emph{imbalance} measure $d_{ik}$, $i=1,\ldots,M$, $k=1,\ldots,N$. The \emph{total imbalance} $G_k=G(d_{1k},\ldots,d_{Mk})$ aggregates the imbalance across the $M$ factors for each of the group allocations.
+
+The randomization probabilities, $p_k$, can either be a fixed value or a function of $G_k$. For our setting, we propose a simple modification to allow the $p_k$ to also be a function of the number of longitudinal samples available, and the maximum samples per batch, so that it is not possible over allocate to a given batch.
+
+\section{Example}
+\label{sec:intro}
+Suppose we have the following subjects to randomize:
+
+<<Library SRS>>=
+library(SRS)
+data(srs_data)
+head(srs_data)
+@ 
+
+where \texttt{Counts} represents the number of longitudinal samples that we have for each subject. We wish to randomly allocate each subject to one of 13 plates, maintaining a good balance of \texttt{Group} (5 levels) and \texttt{Age} (2 levels).
+
+<<randomization>>=
+p.func.greedy.if.possible <- function(overallImbalance, treatmentCounts, maxCounts)
+{
+    cant.go <- treatmentCounts > maxCounts
+    if(all(cant.go)) 
+      stop("Randomization impossible. Probably need another treatment group.")
+
+    number.of.treatments <- length(overallImbalance)
+    k <- which(overallImbalance == min(overallImbalance))
+    p.vec <- rep(0, number.of.treatments)
+    p.vec[k] <- 1
+    p.vec/sum(p.vec)
+    p.vec[cant.go] <- 0
+
+    if(all(p.vec == 0)){ # try less greedy
+      number.of.treatments <- length(overallImbalance)
+      p.star <- 2/3
+      k <- which(overallImbalance == min(overallImbalance))
+      if (length(k) > 1) {
+          k <- sample(k, 1)
+      }
+      p.vec <- rep((1 - p.star)/(number.of.treatments - 1), number.of.treatments)
+      p.vec[k] <- p.star
+      p.vec      
+      p.vec[cant.go] <- 0
+    }
+    
+    p.vec
+}
+
+get.counts <- function(object)
+{
+  expt <- object@expt
+  treatment.names <- expt@treatment.names
+  factor.names <- expt@factor.names
+  factor.level.names <- expt@factor.level.names
+  treatment.names <- expt@treatment.names
+  state.matrix <- object@stateTable
+  tr.ratios <- object@tr.ratios
+  
+  tr.assignments <- object@tr.assignments
+  tr.assignments$Treatment <- factor(tr.assignments$Treatment, 
+    levels = treatment.names)
+  tr.assignments$Counts <- factor(tr.assignments$Counts, 
+    levels = factor.level.names[[which(factor.names == "Counts")]])
+  tr.assignments <- with(tr.assignments, table(Counts, Treatment)) * 
+    as.numeric(factor.level.names[[which(factor.names == "Counts")]])
+  colSums(tr.assignments)
+}  
+
+expt <- ClinicalExperiment(number.of.factors = 3,
+  factor.names = c('Counts', 'Group', 'Age'),
+  number.of.factor.levels = c(2, 5, 2),
+  factor.level.names = 
+    list(c(4, 5), 1:5, c('young', 'old')),
+  number.of.treatments = 13,
+  treatment.names = as.character(1:13))
+
+g.func <- function(imbalances)
+{
+    factor.weights <- c (1, 100, 1)
+    imbalances %*% factor.weights
+}
+
+r.obj <- new("cPocockSimonRandomizer", expt, as.integer(20130827), 
+  g.func=g.func, p.func = p.func.greedy.if.possible, max.counts = 30)
+
+for(i in 1:nrow(srs_data)){
+  r.obj <- randomize(r.obj, as.character(srs_data[i, "ID"]), 
+     as.character(srs_data[i, expt@factor.names]))
+}
+
+tr.assignments <- r.obj@tr.assignments
+tr.assignments$Treatment <- factor(tr.assignments$Treatment, 
+  levels = r.obj@expt@treatment.names)
+@
+
+
+Sample counts (subjects $\times$ timepoints/infusions) per plate:
+<<>>=
+get.counts(r.obj)
+@
+
+Distribution of sample counts per subject per plate
+<<>>=
+with(tr.assignments, table(Counts, Treatment))
+@
+
+Distribution of Group per plate
+<<>>=
+with(tr.assignments, table(Group, Treatment))
+@
+
+Distribution of Age per plate
+<<>>=
+with(tr.assignments, table(Age, Treatment))
+@
+
+\end{document}
